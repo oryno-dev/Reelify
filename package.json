@@ -1,0 +1,45 @@
+{
+  "name": "aaas-local",
+  "version": "0.1.0",
+  "description": "Multi-Scene UI Animator - Scan Once, Animate Anything",
+  "type": "module",
+  "main": "dist/main.js",
+  "scripts": {
+    "start": "vite",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "generate": "tsx src/main.ts"
+  },
+  "keywords": [
+    "animation",
+    "ui",
+    "motion-canvas",
+    "vision-ai",
+    "automation"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@motion-canvas/2d": "^3.17.0",
+    "@motion-canvas/core": "^3.17.0",
+    "@motion-canvas/ui": "^3.17.2",
+    "dotenv": "^16.6.1",
+    "fs-extra": "^11.2.0",
+    "openai": "^4.73.0",
+    "sharp": "^0.33.5",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@motion-canvas/vite-plugin": "^3.17.0",
+    "@types/fs-extra": "^11.0.4",
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vite": "^5.4.11"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
