@@ -128,8 +128,22 @@ async function createAnimation(imagePath: string, prompt: string) {
     // Copy image to public folder for MotionCanvas
     copyImageToPublic(resolvedImagePath);
 
-    // Step 1: Map the screenshot to UI elements
-    log.step(1, 'Mapping screenshot to UI elements...');
+    // Step 1: Multi-pass extraction (Adobe After Effects style)
+    log.step(1, 'Running Adobe After Effects-style multi-pass extraction...');
+    
+    // Import the asset extractor
+    const { multiPassExtraction } = await import('./logic/assetExtractor.js');
+    
+    // Run multi-pass extraction
+    const extractionResult = await multiPassExtraction(resolvedImagePath);
+    log.success('Multi-pass extraction complete!');
+    log.info(`  → Layout analyzed: ${extractionResult.layout.layers?.length || 0} layers`);
+    log.info(`  → Elements detected: ${extractionResult.elements.length}`);
+    log.info(`  → PNG assets extracted: ${extractionResult.pngAssets.size}`);
+    log.info(`  → SVG assets generated: ${extractionResult.svgAssets.size}`);
+
+    // Step 1b: Also run standard mapper for backwards compatibility
+    log.step('1b', 'Running standard element detection...');
     const sceneMap = await mapScreenshot(resolvedImagePath);
     log.success(`Detected ${sceneMap.elements.length} UI elements`);
 

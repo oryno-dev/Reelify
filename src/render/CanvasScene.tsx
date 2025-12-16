@@ -1,4 +1,4 @@
-import { makeScene2D, Img, Rect, Node, Path, Txt, Circle } from '@motion-canvas/2d';
+import { makeScene2D, Rect, Node, Path, Txt, Circle } from '@motion-canvas/2d';
 import { 
   createRef, 
   all, 
@@ -10,8 +10,9 @@ import {
   linear,
 } from '@motion-canvas/core';
 import { StoryboardSchema, type Storyboard, type SceneMap, type UIElement } from '../core/schema';
+import { createEnhancedUIElement, getElementCanvasPosition } from './EnhancedUIElements';
 
-// Import the storyboard data (this should be generated before rendering)
+// Import the storyboard data
 // @ts-ignore - JSON import
 import storyboardData from '../../output/storyboard.json';
 
@@ -22,9 +23,9 @@ export default makeScene2D(function* (view) {
   // Create refs for interactive elements
   const cursorPointer = createRef<Path>();
   const cursorClickRipple = createRef<Circle>();
-  const currentImage = createRef<Img>();
   const highlightBox = createRef<Rect>();
   const typingText = createRef<Txt>();
+  const uiContainer = createRef<Node>();
 
   // Track the active scene
   let activeScene: SceneMap = storyboard.scenes[0];
@@ -37,16 +38,26 @@ export default makeScene2D(function* (view) {
   const cursorColor = colorScheme.theme === 'dark' ? '#FFFFFF' : '#000000';
   const highlightColor = colorScheme.primary || '#4285f4';
 
-  // Initialize the view with the first scene
+  // Initialize the view with the reconstructed UI
   view.add(
     <>
-      {/* Main screenshot image */}
-      <Img 
-        ref={currentImage} 
-        src={activeScene.imagePath}
+      {/* Background */}
+      <Rect
         width={1920}
         height={1080}
+        fill={colorScheme.background}
       />
+      
+      {/* UI Container - holds all reconstructed UI elements */}
+      <Node ref={uiContainer}>
+        {activeScene.elements.map((element) => {
+          return createEnhancedUIElement({
+            key: element.id,
+            element: element,
+            colorScheme: colorScheme,
+          });
+        })}
+      </Node>
       
       {/* Highlight box for showing element bounds */}
       <Rect 
@@ -59,18 +70,14 @@ export default makeScene2D(function* (view) {
         fill={null}
       />
 
-      {/* Typing text display */}
+      {/* Typing text display - will be positioned INSIDE input fields */}
       <Txt
         ref={typingText}
         opacity={0}
-        fontSize={32}
-        fill={colorScheme.theme === 'dark' ? '#FFFFFF' : '#000000'}
+        fontSize={16}
+        fill={colorScheme.theme === 'dark' ? '#E8EAED' : '#202124'}
         fontFamily="'Segoe UI', Arial, sans-serif"
-        stroke={colorScheme.theme === 'dark' ? '#000000' : '#FFFFFF'}
-        lineWidth={3}
         zIndex={99}
-        shadowColor="rgba(0,0,0,0.3)"
-        shadowBlur={4}
       />
 
       {/* Click ripple effect */}
@@ -109,16 +116,20 @@ export default makeScene2D(function* (view) {
     return activeScene.elements.find(e => e.id === elementId);
   };
 
-  // Helper: Convert image coordinates to MotionCanvas coordinates
-  // MotionCanvas uses center origin, so we need to offset by half the dimensions
-  const toCanvasCoords = (x: number, y: number): Vector2 => {
-    // Subtract half the canvas size to center the origin
-    return new Vector2(x - 960, y - 540);
+  // Helper: Get UI element node reference by ID
+  const getElementNode = (elementId?: string): Node | undefined => {
+    if (!uiContainer()) return undefined;
+    const children = uiContainer().children();
+    const element = findElement(elementId);
+    if (!element) return undefined;
+    
+    return children.find(child => child.key === elementId) as Node;
   };
 
   // Play through all actions in sequence
   for (const action of storyboard.actions) {
     const targetElement = findElement(action.targetElementId);
+    const targetNode = getElementNode(action.targetElementId);
 
     switch (action.type) {
       case 'cursor_move': {
@@ -128,13 +139,22 @@ export default makeScene2D(function* (view) {
         }
 
         const { x, y, width, height } = targetElement.coordinates;
-        const targetPos = toCanvasCoords(x, y);
+        const centerPos = getElementCanvasPosition(targetElement);
+        const targetPos = new Vector2(centerPos.x, centerPos.y);
 
         // Show highlight box around the target BEFORE moving
         highlightBox().position(targetPos);
         highlightBox().width(width);
         highlightBox().height(height);
         yield* highlightBox().opacity(0.6, 0.3, easeOutCubic);
+
+        // Add glow to target element if available
+        if (targetNode) {
+          yield* all(
+            targetNode.shadowBlur(8, 0.3),
+            targetNode.shadowColor(highlightColor, 0.3)
+          );
+        }
 
         // Move cursor to the target element with smooth easing
         yield* cursorPointer().position(targetPos, action.duration, easeInOutCubic);
@@ -162,6 +182,14 @@ export default makeScene2D(function* (view) {
           cursorPointer().scale(0.95, 0.1, easeInCubic)
         );
 
+        // Animate the clicked element (scale down and back)
+        if (targetNode) {
+          yield* all(
+            targetNode.scale(0.95, 0.1, easeInCubic),
+            targetNode.opacity(0.8, 0.1)
+          );
+        }
+
         // Show click ripple effect
         cursorClickRipple().position(currentPos);
         cursorClickRipple().size(new Vector2(40, 40));
@@ -172,14 +200,19 @@ export default makeScene2D(function* (view) {
           cursorClickRipple().opacity(0, 0.4, easeOutCubic)
         );
 
-        // Return cursor to normal
+        // Return cursor and element to normal
         yield* all(
           cursorPointer().position(currentPos, 0.15, easeOutCubic),
-          cursorPointer().scale(1, 0.15, easeOutCubic)
+          cursorPointer().scale(1, 0.15, easeOutCubic),
+          targetNode ? targetNode.scale(1, 0.15, easeOutCubic) : waitFor(0),
+          targetNode ? targetNode.opacity(1, 0.15) : waitFor(0)
         );
 
-        // Fade out highlight
-        yield* highlightBox().opacity(0, 0.3, easeInCubic);
+        // Fade out highlight and glow
+        yield* all(
+          highlightBox().opacity(0, 0.3, easeInCubic),
+          targetNode ? targetNode.shadowBlur(0, 0.3) : waitFor(0)
+        );
         
         break;
       }
@@ -190,23 +223,42 @@ export default makeScene2D(function* (view) {
           break;
         }
 
-        const currentPos = cursorPointer().position();
+        if (!targetElement) {
+          console.warn(`Target element not found for typing: ${action.targetElementId}`);
+          break;
+        }
 
-        // Position typing text near the input field
-        typingText().position(new Vector2(currentPos.x, currentPos.y - 50));
+        // Get the center position of the input field
+        const inputPos = getElementCanvasPosition(targetElement);
+        const { height } = targetElement.coordinates;
+
+        // Position typing text INSIDE the input field (left-aligned)
+        // Offset from center to left edge, plus some padding
+        const textXPos = inputPos.x - (targetElement.coordinates.width / 2) + 12;
+        typingText().position(new Vector2(textXPos, inputPos.y));
+        typingText().fontSize(Math.min(16, height * 0.5));
+        typingText().textAlign('left');
         typingText().opacity(1);
         typingText().text('');
+
+        // Add focus glow to input element
+        if (targetNode) {
+          yield* all(
+            targetNode.shadowBlur(12, 0.3),
+            targetNode.shadowColor(highlightColor, 0.3)
+          );
+        }
 
         // Simulate typing character by character with variable speed
         const text = action.payload;
         const baseDelay = action.duration / text.length;
 
         for (let i = 0; i < text.length; i++) {
-          // Add some randomness to typing speed for realism
           const charDelay = baseDelay * (0.8 + Math.random() * 0.4);
           typingText().text(text.substring(0, i + 1));
           
           // Subtle cursor bob while typing
+          const currentPos = cursorPointer().position();
           if (i % 3 === 0) {
             yield* cursorPointer().position(
               new Vector2(currentPos.x, currentPos.y + 2), 
@@ -223,8 +275,13 @@ export default makeScene2D(function* (view) {
           }
         }
 
-        // Fade out the typing text
-        yield* typingText().opacity(0, 0.4, easeInCubic);
+        // Keep the text visible but remove focus glow
+        yield* all(
+          targetNode ? targetNode.shadowBlur(0, 0.4) : waitFor(0)
+        );
+        
+        // Wait a bit before fading out
+        yield* waitFor(0.5);
         
         break;
       }
@@ -249,16 +306,28 @@ export default makeScene2D(function* (view) {
 
         // Fade out current scene
         yield* all(
-          currentImage().opacity(0, action.duration / 2, easeInCubic),
+          uiContainer().opacity(0, action.duration / 2, easeInCubic),
           cursorPointer().opacity(0, action.duration / 2),
           highlightBox().opacity(0, action.duration / 2)
         );
 
-        // Switch to new scene and update color scheme
+        // Clear and rebuild UI container with new scene
+        uiContainer().removeChildren();
         activeScene = nextScene;
-        currentImage().src(activeScene.imagePath);
         
         const newColorScheme = activeScene.colorScheme;
+        
+        // Recreate UI elements for new scene
+        activeScene.elements.forEach((element) => {
+          const uiElement = createEnhancedUIElement({
+            key: element.id,
+            element: element,
+            colorScheme: newColorScheme,
+          });
+          uiContainer().add(uiElement);
+        });
+
+        // Update colors
         const newCursorColor = newColorScheme.theme === 'dark' ? '#FFFFFF' : '#000000';
         const newHighlightColor = newColorScheme.primary || '#4285f4';
         
@@ -268,7 +337,7 @@ export default makeScene2D(function* (view) {
 
         // Fade in new scene
         yield* all(
-          currentImage().opacity(1, action.duration / 2, easeOutCubic),
+          uiContainer().opacity(1, action.duration / 2, easeOutCubic),
           cursorPointer().opacity(1, action.duration / 2)
         );
         break;

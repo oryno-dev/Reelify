@@ -10,7 +10,10 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "generate": "tsx src/main.ts"
+    "generate": "tsx src/main.ts",
+    "convert:svg": "tsx src/cli/convertToSvg.ts",
+    "convert:batch": "tsx src/cli/convertToSvg.ts batch public/assets",
+    "ae:convert": "npm run convert:batch"
   },
   "keywords": [
     "animation",
